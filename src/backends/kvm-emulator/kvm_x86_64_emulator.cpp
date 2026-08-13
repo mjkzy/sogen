@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -68,6 +69,16 @@ namespace sogen::kvm
         constexpr uintptr_t cache_line_size = 64;
         constexpr uint64_t guest_physical_page_base = 0x0000000100000000ull;
         constexpr uint64_t internal_virtual_memory_base = 0xFFFF800000000000ull;
+
+        bool is_valid_guest_mapping_range(const uint64_t address, const size_t size)
+        {
+            if (address > (std::numeric_limits<uint64_t>::max)() - size)
+            {
+                return false;
+            }
+
+            return address + size <= internal_virtual_memory_base;
+        }
 
         // clflushopt is unordered, so consecutive evictions pipeline instead of serializing like clflush does
         // on every line; for the bulk flushes the GPU bridge issues before each submit that is a meaningful
@@ -1140,6 +1151,11 @@ namespace sogen::kvm
                     throw std::runtime_error("KVM MMIO mappings must be page aligned");
                 }
 
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("KVM MMIO mapping range is out of bounds");
+                }
+
                 mmio_region region{.address = address, .size = size, .read_cb = std::move(read_cb), .write_cb = std::move(write_cb)};
 
                 // Back MMIO with a read-only guest mapping rather than relying on KVM_EXIT_MMIO. KVM
@@ -1178,6 +1194,11 @@ namespace sogen::kvm
                 if (!is_page_aligned(address) || !is_page_aligned(size))
                 {
                     throw std::runtime_error("KVM memory mappings must be page aligned");
+                }
+
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("KVM memory mapping range is out of bounds");
                 }
 
                 bool can_batch_map = true;
@@ -1244,6 +1265,12 @@ namespace sogen::kvm
                 {
                     throw std::runtime_error("KVM host memory mappings must be page aligned");
                 }
+
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("KVM host memory mapping range is out of bounds");
+                }
+
                 if ((reinterpret_cast<uintptr_t>(host_pointer) % page_size) != 0)
                 {
                     throw std::runtime_error("KVM host memory mappings require a page-aligned host pointer");
@@ -1291,6 +1318,11 @@ namespace sogen::kvm
                     throw std::runtime_error("KVM memory unmappings must be page aligned");
                 }
 
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("KVM memory unmapping range is out of bounds");
+                }
+
                 for (size_t offset = 0; offset < size; offset += page_size)
                 {
                     const auto entry = this->mapped_pages_.find(address + offset);
@@ -1328,6 +1360,11 @@ namespace sogen::kvm
                 if (!is_page_aligned(address) || !is_page_aligned(size))
                 {
                     throw std::runtime_error("KVM protection changes must be page aligned");
+                }
+                
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("KVM protection change range is out of bounds");
                 }
 
                 // Only presence and writability (read-only vs read-write) are projected into KVM memslots;

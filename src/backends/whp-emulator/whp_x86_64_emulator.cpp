@@ -40,7 +40,8 @@ namespace sogen::whp
         constexpr uint64_t page_table_entry_address_mask = 0x000FFFFFFFFFF000ull;
         constexpr uint64_t guest_physical_memory_base = 0x0000000100000000ull;
         constexpr uint64_t internal_page_table_base = 0x0000007000000000ull;
-        constexpr uint64_t syscall_hook_virtual_address = 0xFFFF800000001000ull;
+        constexpr uint64_t internal_virtual_memory_base = 0xFFFF800000000000ull;
+        constexpr uint64_t syscall_hook_virtual_address = internal_virtual_memory_base + 0x1000;
         constexpr uint64_t unmapped_guest_page = (std::numeric_limits<uint64_t>::max)();
         constexpr uint32_t xsave_state_capacity = 0xFFF;
 
@@ -52,6 +53,16 @@ namespace sogen::whp
         bool is_page_aligned(const uint64_t value)
         {
             return (value % page_size) == 0;
+        }
+
+        bool is_valid_guest_mapping_range(const uint64_t address, const size_t size)
+        {
+            if (address > (std::numeric_limits<uint64_t>::max)() - size)
+            {
+                return false;
+            }
+
+            return address + size <= internal_virtual_memory_base;
         }
 
         [[noreturn]] void throw_hr(const HRESULT hr, const char* action)
@@ -1389,6 +1400,11 @@ namespace sogen::whp
                     throw std::runtime_error("WHP MMIO mappings must be page aligned");
                 }
 
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("WHP MMIO mapping range is out of bounds");
+                }
+
                 std::unique_lock lock(this->partition_mutex_);
 
                 mmio_region region{
@@ -1470,6 +1486,11 @@ namespace sogen::whp
                     throw std::runtime_error("WHP memory mappings must be page aligned");
                 }
 
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("WHP memory mapping range is out of bounds");
+                }
+
                 std::unique_lock lock(this->partition_mutex_);
 
                 bool can_batch_map = true;
@@ -1541,6 +1562,11 @@ namespace sogen::whp
                 {
                     throw std::runtime_error("WHP host memory mappings must be page aligned");
                 }
+
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("WHP host memory mapping range is out of bounds");
+                }
                 if ((reinterpret_cast<uintptr_t>(host_pointer) % page_size) != 0)
                 {
                     throw std::runtime_error("WHP host memory mappings require a page-aligned host pointer");
@@ -1577,6 +1603,11 @@ namespace sogen::whp
                 if (!is_page_aligned(address) || !is_page_aligned(size))
                 {
                     throw std::runtime_error("WHP memory unmappings must be page aligned");
+                }
+
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("WHP memory unmapping range is out of bounds");
                 }
 
                 std::unique_lock lock(this->partition_mutex_);
@@ -1686,6 +1717,11 @@ namespace sogen::whp
                 if (!is_page_aligned(address) || !is_page_aligned(size))
                 {
                     throw std::runtime_error("WHP protection changes must be page aligned");
+                }
+                
+                if (!is_valid_guest_mapping_range(address, size))
+                {
+                    throw std::runtime_error("WHP protection change range is out of bounds");
                 }
 
                 std::unique_lock lock(this->partition_mutex_);

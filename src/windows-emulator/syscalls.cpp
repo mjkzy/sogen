@@ -1051,6 +1051,14 @@ namespace sogen
         NTSTATUS handle_NtAddAtomEx(const syscall_context& c, const uint64_t atom_name, const ULONG length,
                                     const emulator_object<RTL_ATOM> atom, const ULONG /*flags*/)
         {
+            // Atom names are UTF-16; an odd byte length would round the resize down and then copy
+            // `length` bytes into the shorter backing buffer.
+            constexpr uint32_t k_max_atom_bytes = 0x10000;
+            if ((length & 1) != 0 || length > k_max_atom_bytes)
+            {
+                return STATUS_INVALID_PARAMETER;
+            }
+
             std::u16string name{};
             name.resize(length / 2);
 

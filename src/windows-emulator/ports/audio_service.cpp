@@ -499,6 +499,15 @@ namespace sogen
                     }
                 }
 
+                // The duration is the sole guest input to the sizing below, and buffer_bytes is a 32-bit
+                // wire field. An unbounded duration would wrap buffer_bytes / buffer_extent while the drain
+                // thread still reads buffer_bytes from the host buffer.
+                constexpr uint64_t k_max_buffer_duration = 60 * k_hns_per_second;
+                if (duration_hns > k_max_buffer_duration)
+                {
+                    return STATUS_INVALID_PARAMETER;
+                }
+
                 const uint64_t buffer_frames = (k_sample_rate * duration_hns + k_hns_per_second - 1) / k_hns_per_second;
                 const auto buffer_bytes = static_cast<uint32_t>(buffer_frames * k_block_align);
                 const uint32_t buffer_extent = k_render_data_offset + buffer_bytes; // control header + sample area
